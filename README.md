@@ -11,7 +11,6 @@ Some of the remaining work is:
 * Secrets
 * Config Maps
 * Volumes
-* Storage
 
 **Note: This document is a work in progress and is intended to be updated with community input regularly as progress is made.  If you have any additions or changes you would like to add to this document, please submit a PR.**
 
@@ -61,13 +60,195 @@ There is also ongoing work to allow kubelet to consume stats via the CRI.  Once 
 Investigation into this feature is ongoing.
 ## Config Maps
 
+ConfigMaps allow you to decouple configuration artifacts from image content to keep containerized applications portable.
+
+###Literal Value config map
+
+```kubectl create configmap special-config --from-literal=special.how=very```
+
+
+###Acccessing config as environment variable
+
+The following yaml file will take the special.how value from the config map and create an environment variable named HOW_SPECIAL in the container with the value `very`.
+
+configmap-env.yaml
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pd-hp3
+spec:
+  containers:
+  - image: redis:3.0-nanoserver
+    name: test-container
+    env: 
+      - name: HOW_SPECIAL
+        valueFrom:
+          configMapKeyRef:
+            name: special-config
+            key: special.how
+  nodeSelector:
+    beta.kubernetes.io/os: windows
+```
+
+###Accessing config as volume
+
+This appears to be blocked by an issue where symlinks created outside of docker containers do not work within the container on windows.
+
 Investigation into this feature is ongoing.
 ## Volumes
 
-Investigation into this feature is ongoing.
-## Persistent Storage
+###HostPath Volumes
 
-Investigation into this feature is ongoing.
+A hostPath volume mounts a file or directory from the host node’s filesystem into your pod. This is not something that most Pods will need, but it offers a powerful escape hatch for some applications.
+
+For example, some uses for a hostPath are:
+
+* running a container that needs access to Docker internals; use a hostPath of /var/lib/docker
+* running cAdvisor in a container; use a hostPath of /dev/cgroups
+
+Watch out when using this type of volume, because:
+
+* pods with identical configuration (such as created from a podTemplate) may behave differently on different nodes due to different files on the nodes
+* when Kubernetes adds resource-aware scheduling, as is planned, it will not be able to account for resources used by a hostPath
+    the directories created on the underlying hosts are only writable by root.
+* You either need to run your process as root in a privileged container or modify the file permissions on the host to be able to write to a hostPath volume
+
+hostpath.yaml
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pd-hp4
+spec:
+  containers:
+  - image: redis:3.0-nanoserver
+    name: test-container
+    volumeMounts:
+    - mountPath: C:/test-pd
+      name: test-volume
+  volumes:
+  - name: test-volume
+    hostPath:
+      # directory location on host
+      path: C:/data
+  nodeSelector:
+    beta.kubernetes.io/os: windows
+```
+
+
+###Empty
+
+An emptyDir volume is first created when a Pod is assigned to a Node, and exists as long as that Pod is running on that node. As the name says, it is initially empty. Containers in the pod can all read and write the same files in the emptyDir volume, though that volume can be mounted at the same or different paths in each container. When a Pod is removed from a node for any reason, the data in the emptyDir is deleted forever. NOTE: a container crashing does NOT remove a pod from a node, so the data in an emptyDir volume is safe across container crashes.
+
+Some uses for an emptyDir are:
+
+* scratch space, such as for a disk-based merge sort
+* checkpointing a long computation for recovery from crashes
+* holding files that a content-manager container fetches while a webserver container serves the data
+
+By default, emptyDir volumes are stored on whatever medium is backing the machine - that might be disk or SSD or network storage, depending on your environment. However, you can set the emptyDir.medium field to "Memory" to tell Kubernetes to mount a tmpfs (RAM-backed filesystem) for you instead. While tmpfs is very fast, be aware that unlike disks, tmpfs is cleared on machine reboot and any files you write will count against your container’s memory limit.
+
+empty.yaml
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pd
+spec:
+  containers:
+  - image: redis:3.0-nanoserver
+    name: test-container
+    volumeMounts:
+    - mountPath: /cache
+      name: cache-volume
+  volumes:
+  - name: cache-volume
+    emptyDir: {}
+  nodeSelector:
+    beta.kubernetes.io/os: windows
+```
+
+###Secret
+
+Secret
+
+A secret volume is used to pass sensitive information, such as passwords, to pods. You can store secrets in the Kubernetes API and mount them as files for use by pods without coupling to Kubernetes directly. secret volumes are backed by tmpfs (a RAM-backed filesystem) so they are never written to non-volatile storage.
+
+Important: You must create a secret in the Kubernetes API before you can use it
+
+Secrets are described in more detail[here](https://kubernetes.io/docs/user-guide/secrets).
+
+As of right now this does not appear to work with Windows due to https://github.com/moby/moby/issues/28401
+
+###Persistent Volume Claim 
+
+A persistentVolumeClaim volume is used to mount a [PersistentVolume](https://kubernetes.io/docs/user-guide/persistent-volumes) into a pod. PersistentVolumes are a way for users to “claim” durable storage (such as a GCE PersistentDisk or an iSCSI volume) without knowing the details of the particular cloud environment.
+
+See the [PersistentVolumes example](https://kubernetes.io/docs/concepts/storage/persistent-volumes/) for more details.
+
+
+First, create the persistent volume.  This uses gcePersistentDisk for mounting GCE persistent disk.  https://kubernetes.io/docs/concepts/storage/volumes/#gcepersistentdisk
+
+Then add that disk to your windows node, format and mount that disk (example here mounts it to D:\).  The following will add the disk to k8s as a persistent volume.
+
+windows-pv.yaml
+```yaml
+apiVersion: "v1"
+kind: "PersistentVolume"
+metadata:
+  name: "gce-windows-pv"
+spec:
+  capacity:
+    storage: "1Gi"
+  accessModes:
+    - "ReadWriteOnce"
+  hostPath:
+    path: "D:/"
+```
+
+The next yaml file will create the persistent volume claim that a pod can use to mount the volume.
+
+windows-pv-claim.yaml
+```yaml
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: windows-pv-claim
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+```
+
+The following creates a pod and mounts the persistent volume to C:\test-pv in the redis container.
+
+redis-pvc.yaml
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pd-hp5
+spec:
+  containers:
+  - image: redis:3.0-nanoserver
+    name: test-container2
+    volumeMounts:
+    - mountPath: C:/test-pd
+      name: pv1
+  volumes:
+    - name: pv1
+      persistentVolumeClaim:
+        claimName: task-pv-claim
+  nodeSelector:
+    beta.kubernetes.io/os: windows
+```
+
+Persistent Volume Claims allow a pod to use a persistent volume without knowing the underlying mechanics of the volume (is it a local/network/gce disk).  The mechanics of Persistent Volumes and Persistent Volume Claims appear to work fine with windows containers.
+
+
 
 
 # Demo
