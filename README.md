@@ -62,12 +62,12 @@ Investigation into this feature is ongoing.
 
 ConfigMaps allow you to decouple configuration artifacts from image content to keep containerized applications portable.
 
-###Literal Value config map
+### Literal Value config map
 
 ```kubectl create configmap special-config --from-literal=special.how=very```
 
 
-###Acccessing config as environment variable
+### Acccessing config as environment variable
 
 The following yaml file will take the special.how value from the config map and create an environment variable named HOW_SPECIAL in the container with the value `very`.
 
@@ -91,14 +91,14 @@ spec:
     beta.kubernetes.io/os: windows
 ```
 
-###Accessing config as volume
+### Accessing config as volume
 
 This appears to be blocked by an issue where symlinks created outside of docker containers do not work within the container on windows.
 
 Investigation into this feature is ongoing.
 ## Volumes
 
-###HostPath Volumes
+### HostPath Volumes
 
 A hostPath volume mounts a file or directory from the host node’s filesystem into your pod. This is not something that most Pods will need, but it offers a powerful escape hatch for some applications.
 
@@ -137,7 +137,7 @@ spec:
 ```
 
 
-###Empty
+### Empty
 
 An emptyDir volume is first created when a Pod is assigned to a Node, and exists as long as that Pod is running on that node. As the name says, it is initially empty. Containers in the pod can all read and write the same files in the emptyDir volume, though that volume can be mounted at the same or different paths in each container. When a Pod is removed from a node for any reason, the data in the emptyDir is deleted forever. NOTE: a container crashing does NOT remove a pod from a node, so the data in an emptyDir volume is safe across container crashes.
 
@@ -169,9 +169,7 @@ spec:
     beta.kubernetes.io/os: windows
 ```
 
-###Secret
-
-Secret
+### Secret
 
 A secret volume is used to pass sensitive information, such as passwords, to pods. You can store secrets in the Kubernetes API and mount them as files for use by pods without coupling to Kubernetes directly. secret volumes are backed by tmpfs (a RAM-backed filesystem) so they are never written to non-volatile storage.
 
@@ -181,7 +179,7 @@ Secrets are described in more detail[here](https://kubernetes.io/docs/user-guide
 
 As of right now this does not appear to work with Windows due to https://github.com/moby/moby/issues/28401
 
-###Persistent Volume Claim 
+### Persistent Volume Claim 
 
 A persistentVolumeClaim volume is used to mount a [PersistentVolume](https://kubernetes.io/docs/user-guide/persistent-volumes) into a pod. PersistentVolumes are a way for users to “claim” durable storage (such as a GCE PersistentDisk or an iSCSI volume) without knowing the details of the particular cloud environment.
 
